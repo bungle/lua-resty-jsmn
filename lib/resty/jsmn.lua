@@ -40,7 +40,7 @@ jsmnerr_t jsmn_parse(jsmn_parser *parser, const char *js, size_t len, jsmntok_t 
 ]]
 local arr = { __index = { __jsontype = "array"  }}
 local obj = { __index = { __jsontype = "object" }}
-local lib = ffi_load("/Users/bungle/Sources/lua-resty-jsmn/lib/resty/libjsmn.so")
+local lib = ffi_load("libjsmn")
 local ctx = ffi_typeof("jsmn_parser")
 local tok = ffi_typeof("jsmntok_t[?]")
 local ok, newtab = pcall(require, "table.new")
