@@ -80,37 +80,28 @@ function jsmn.decode(json, l, m)
     local tokens = ffi_new(tok, m)
     lib.jsmn_parse(ctx, json, l, tokens, m)
     local n, l, k = newtab(m, 0), m - 1, nil
-    for i=0, l do
+    n[0] = setmetatable(newtab(0, tokens[0].size), obj)
+    for i=1, l do
         local token = tokens[i]
-        local t, z, s, e, p, v = token.type, token.size, token.start + 1, token["end"], token.parent, nil
+        local t, s, e, z, p  = token.type, token.start + 1, token["end"], token.size, n[token.parent]
+        local j = getmetatable(p) == obj and k or #p + 1
         if t == C.JSMN_PRIMITIVE then
-            n[i] = n[p]
+            n[i] = p
             local  c = sub(json, s, s)
-            if     c == "f" then v = false
-            elseif c == "t" then v = true
-            elseif c == "n" then v = null
-            else                 v = tonumber(sub(json, s, e)) end
+            if     c == "f" then p[j] = false
+            elseif c == "t" then p[j] = true
+            elseif c == "n" then p[j] = null
+            else                 p[j] = tonumber(sub(json, s, e)) end
         elseif t == C.JSMN_OBJECT then
-            v = setmetatable(newtab(0, z), obj)
-            n[i] = v
+            n[i] = setmetatable(newtab(0, z), obj)
+            p[j] = n[i]
         elseif t == C.JSMN_ARRAY then
-            v = setmetatable(newtab(z, 0), arr)
-            n[i] = v
+            n[i] = setmetatable(newtab(z, 0), arr)
+            p[j] = n[i]
         elseif t == C.JSMN_STRING then
-            n[i] = n[p]
-            if z == 1 then
-                k = sub(json, s, e)
-            else
-                v = sub(json, s, e)
-            end
-        end
-        if k ~= nil and v ~= nil then
-            p = n[p]
-            if getmetatable(p) == arr then
-                p[#p + 1] = v
-            else
-                p[k] = v
-            end
+            n[i] = p
+            local v = sub(json, s, e)
+            if z == 1 then k = v else p[j] = v end
         end
     end
     return n[0], m
