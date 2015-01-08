@@ -44,7 +44,7 @@ local lib = ffi_load("libjsmn")
 local ctx = ffi_typeof("jsmn_parser")
 local tok = ffi_typeof("jsmntok_t[?]")
 local ok, newtab = pcall(require, "table.new")
-if not ok then newtab = function (narr, nrec) return {} end  end
+if not ok then newtab = function() return {} end end
 local jsmn = newtab(0, 4)
 jsmn.__index = jsmn
 function jsmn.new()
@@ -70,15 +70,15 @@ end
 function jsmn.decode(json, l, m)
     if type(json) ~= "string" then return json, 1 end
     local ctx = ffi_new(ctx)
+    lib.jsmn_init(ctx)
     if not l then l = #json end
     if not m then
         m = tonumber(lib.jsmn_parse(ctx, json, l, nil, 0))
-        lib.jsmn_init(ctx)
         if m < 1 then return nil, m end
+        lib.jsmn_init(ctx)
     end
     local tokens = ffi_new(tok, m)
     lib.jsmn_parse(ctx, json, l, tokens, m)
-    if not tokens then return nil, m end
     local n, l, k = newtab(m, 0), m - 1, nil
     for i=0, l do
         local token = tokens[i]
@@ -114,5 +114,61 @@ function jsmn.decode(json, l, m)
         end
     end
     return n[0], m
+end
+function jsmn.dec(json, tokens, current)
+    local token = tokens[current]
+    local t = token.type
+    if t == C.JSMN_PRIMITIVE then
+        local  s = token.start + 1
+        local  c = sub(json, s, s)
+        if c == "f" then return false, current + 1 end
+        if c == "t" then return true,  current + 1 end
+        if c == "n" then return null,  current + 1 end
+        return tonumber(sub(json, s, token["end"])), current + 1
+    end
+    if t == C.JSMN_OBJECT then
+        return jsmn.obj(json, tokens, current)
+    end
+    if t == C.JSMN_ARRAY then
+        return jsmn.arr(json, tokens, current)
+    end
+    return sub(json, token.start + 1, token["end"]), current + 1
+end
+function jsmn.arr(json, tokens, current)
+    local token = tokens[current]
+    current = current + 1
+    local size  = token.size
+    local a, v = setmetatable(newtab(size, 0), arr)
+    for i = 1, size do
+        v, current = jsmn.dec(json, tokens, current)
+        a[i] = v
+    end
+    return a, current
+end
+function jsmn.obj(json, tokens, current)
+    local token = tokens[current]
+    current = current + 1
+    local size  = token.size
+    local o, k, v = setmetatable(newtab(0, size), obj)
+    for i = 1, size do
+        k, current = jsmn.dec(json, tokens, current)
+        v, current = jsmn.dec(json, tokens, current)
+        o[k] = v
+    end
+    return o, current
+end
+function jsmn.decode2(json, l, m)
+    if type(json) ~= "string" then return json, 1 end
+    local ctx = ffi_new(ctx)
+    lib.jsmn_init(ctx)
+    if not l then l = #json end
+    if not m then
+        m = tonumber(lib.jsmn_parse(ctx, json, l, nil, 0))
+        if m < 1 then return nil, m end
+        lib.jsmn_init(ctx)
+    end
+    local tokens = ffi_new(tok, m)
+    lib.jsmn_parse(ctx, json, l, tokens, m)
+    return (jsmn.obj(json, tokens, 0)), m
 end
 return jsmn
