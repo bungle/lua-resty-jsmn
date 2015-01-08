@@ -45,7 +45,7 @@ local ctx = ffi_typeof("jsmn_parser")
 local tok = ffi_typeof("jsmntok_t[?]")
 local ok, newtab = pcall(require, "table.new")
 if not ok then newtab = function() return {} end end
-local jsmn = newtab(0, 4)
+local jsmn = newtab(0, 9)
 jsmn.__index = jsmn
 function jsmn.new()
     local self = newtab(1, 0)
@@ -118,42 +118,34 @@ end
 function jsmn.dec(json, tokens, current)
     local token = tokens[current]
     local t = token.type
+    if t == C.JSMN_OBJECT then return jsmn.obj(json, tokens, current) end
+    if t == C.JSMN_ARRAY  then return jsmn.arr(json, tokens, current) end
     if t == C.JSMN_PRIMITIVE then
-        local  s = token.start + 1
-        local  c = sub(json, s, s)
+        local s = token.start + 1
+        local c = sub(json, s, s)
         if c == "f" then return false, current + 1 end
         if c == "t" then return true,  current + 1 end
         if c == "n" then return null,  current + 1 end
         return tonumber(sub(json, s, token["end"])), current + 1
     end
-    if t == C.JSMN_OBJECT then
-        return jsmn.obj(json, tokens, current)
-    end
-    if t == C.JSMN_ARRAY then
-        return jsmn.arr(json, tokens, current)
-    end
     return sub(json, token.start + 1, token["end"]), current + 1
 end
 function jsmn.arr(json, tokens, current)
     local token = tokens[current]
+    local z = token.size
+    local a = setmetatable(newtab(z, 0), arr)
     current = current + 1
-    local size  = token.size
-    local a, v = setmetatable(newtab(size, 0), arr)
-    for i = 1, size do
-        v, current = jsmn.dec(json, tokens, current)
-        a[i] = v
-    end
+    for i = 1, z do a[i], current = jsmn.dec(json, tokens, current) end
     return a, current
 end
 function jsmn.obj(json, tokens, current)
     local token = tokens[current]
+    local z = token.size
+    local o = setmetatable(newtab(0, z), obj)
     current = current + 1
-    local size  = token.size
-    local o, k, v = setmetatable(newtab(0, size), obj)
-    for i = 1, size do
-        k, current = jsmn.dec(json, tokens, current)
-        v, current = jsmn.dec(json, tokens, current)
-        o[k] = v
+    for i = 1, z do
+        local k, c    = jsmn.dec(json, tokens, current)
+        o[k], current = jsmn.dec(json, tokens, c)
     end
     return o, current
 end
