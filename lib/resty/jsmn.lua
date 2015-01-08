@@ -83,7 +83,7 @@ function jsmn.decode(json, l, m)
     n[0] = setmetatable(newtab(0, tokens[0].size), obj)
     for i=1, l do
         local token = tokens[i]
-        local t, s, e, z, p  = token.type, token.start + 1, token["end"], token.size, n[token.parent]
+        local t, s, e, z, p = token.type, token.start + 1, token["end"], token.size, n[token.parent]
         local j = getmetatable(p) == obj and k or #p + 1
         if t == C.JSMN_PRIMITIVE then
             n[i] = p
