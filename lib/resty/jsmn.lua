@@ -1,47 +1,53 @@
+local require      = require
 local setmetatable = setmetatable
+local getmetatable = getmetatable
 local ffi          = require "ffi"
 local ffi_new      = ffi.new
 local ffi_typeof   = ffi.typeof
 local ffi_cdef     = ffi.cdef
 local ffi_load     = ffi.load
+local tonumber     = tonumber
+local pcall        = pcall
 local sub          = string.sub
 local type         = type
 local null         = {}
+local ngx          = ngx
 if ngx and ngx.null then
     null = ngx.null
 end
 ffi_cdef[[
 typedef enum {
-	JSMN_PRIMITIVE = 0,
-	JSMN_OBJECT    = 1,
-	JSMN_ARRAY     = 2,
-	JSMN_STRING    = 3
+	JSMN_UNDEFINED = 0,
+	JSMN_OBJECT = 1,
+	JSMN_ARRAY = 2,
+	JSMN_STRING = 3,
+	JSMN_PRIMITIVE = 4
 } jsmntype_t;
-typedef enum {
+enum jsmnerr {
 	JSMN_ERROR_NOMEM = -1,
 	JSMN_ERROR_INVAL = -2,
-	JSMN_ERROR_PART  = -3
-} jsmnerr_t;
+	JSMN_ERROR_PART = -3
+};
 typedef struct {
 	jsmntype_t type;
 	int start;
 	int end;
 	int size;
-    int parent;
+	int parent;
 } jsmntok_t;
 typedef struct {
 	unsigned int pos;
 	unsigned int toknext;
-	         int toksuper;
+	int toksuper;
 } jsmn_parser;
 void jsmn_init(jsmn_parser *parser);
-jsmnerr_t jsmn_parse(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens);
+int jsmn_parse(jsmn_parser *parser, const char *js, size_t len, jsmntok_t *tokens, unsigned int num_tokens);
 ]]
 local arr = { __index = { __jsontype = "array"  }}
 local obj = { __index = { __jsontype = "object" }}
-local lib = ffi_load("libjsmn")
-local ctx = ffi_typeof("jsmn_parser")
-local tok = ffi_typeof("jsmntok_t[?]")
+local lib = ffi_load "jsmn"
+local ctx = ffi_typeof "jsmn_parser"
+local tok = ffi_typeof "jsmntok_t[?]"
 local ok, newtab = pcall(require, "table.new")
 if not ok then newtab = function() return {} end end
 local jsmn = newtab(0, 10)
@@ -89,12 +95,7 @@ function jsmn.decode(json, l, m)
         local t, s, e, z, p = tonumber(token.type), token.start + 1, token["end"], token.size, n[token.parent]
         local j = getmetatable(p) == obj and k or #p + 1
         if t == 0 then
-            n[i] = p
-            local  c = sub(json, s, s)
-            if     c == "f" then p[j] = false
-            elseif c == "t" then p[j] = true
-            elseif c == "n" then p[j] = null
-            else                 p[j] = tonumber(sub(json, s, e)) end
+
         elseif t == 1 then
             n[i] = setmetatable(newtab(0, z), obj)
             p[j] = n[i]
@@ -105,6 +106,13 @@ function jsmn.decode(json, l, m)
             n[i] = p
             local v = sub(json, s, e)
             if z == 1 then k = v else p[j] = v end
+        elseif t == 4 then
+            n[i] = p
+            local  c = sub(json, s, s)
+            if     c == "f" then p[j] = false
+            elseif c == "t" then p[j] = true
+            elseif c == "n" then p[j] = null
+            else                 p[j] = tonumber(sub(json, s, e)) end
         end
     end
     return n[0], m
@@ -112,7 +120,9 @@ end
 function jsmn.dec(json, tokens, current)
     local token = tokens[current]
     local t = tonumber(token.type)
-    if t == 0 then
+    if t == 1 then return jsmn.obj(json, tokens, current) end
+    if t == 2 then return jsmn.arr(json, tokens, current) end
+    if t == 4 then
         local s = token.start + 1
         local c = sub(json, s, s)
         if c == "f" then return false, current + 1 end
@@ -120,8 +130,6 @@ function jsmn.dec(json, tokens, current)
         if c == "n" then return null,  current + 1 end
         return tonumber(sub(json, s, token["end"])), current + 1
     end
-    if t == 1 then return jsmn.obj(json, tokens, current) end
-    if t == 2 then return jsmn.arr(json, tokens, current) end
     return sub(json, token.start + 1, token["end"]), current + 1
 end
 function jsmn.arr(json, tokens, current)
@@ -137,7 +145,7 @@ function jsmn.obj(json, tokens, current)
     local z = token.size
     local o = setmetatable(newtab(0, z), obj)
     current = current + 1
-    for i = 1, z do
+    for _ = 1, z do
         local k, c    = jsmn.dec(json, tokens, current)
         o[k], current = jsmn.dec(json, tokens, c)
     end
